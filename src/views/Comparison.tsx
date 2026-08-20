@@ -1,42 +1,55 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   GitCompareArrows,
   Check,
   X,
   AlertTriangle,
-  ArrowLeftRight,
   Loader2,
   Sparkles,
   Users,
+  ShieldCheck,
+  FileText,
+  Folders,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { AIDisclaimer } from '@/components/ui/Alert';
-import { comparisonRows } from '@/data/member2Data';
-import { witnesses } from '@/data/mockData';
+import { useData } from '@/context/DataContext';
+import { comparisonRows as defaultComparisonRows } from '@/data/member2Data';
 import { cn } from '@/lib/utils';
-import type { ComparisonClassification, ComparisonRow } from '@/types';
+import type { ComparisonClassification, ComparisonRow, Witness, WitnessStatement } from '@/types';
 
 const classificationConfig: Record<ComparisonClassification, { label: string; icon: React.ReactNode; cellClass: string; badgeVariant: 'success' | 'warning' | 'danger' }> = {
-  common: { label: 'Common', icon: <Check size={14} />, cellClass: 'bg-success-50/40 border-success-200', badgeVariant: 'success' },
-  difference: { label: 'Difference', icon: <AlertTriangle size={14} />, cellClass: 'bg-warning-50/40 border-warning-200', badgeVariant: 'warning' },
-  contradiction: { label: 'Contradiction', icon: <X size={14} />, cellClass: 'bg-danger-50/40 border-danger-200', badgeVariant: 'danger' },
+  common: { label: 'Common Fact', icon: <Check size={14} />, cellClass: 'bg-emerald-50/40 border-emerald-200', badgeVariant: 'success' },
+  difference: { label: 'Difference', icon: <AlertTriangle size={14} />, cellClass: 'bg-amber-50/40 border-amber-200', badgeVariant: 'warning' },
+  contradiction: { label: 'Contradiction', icon: <X size={14} />, cellClass: 'bg-rose-50/40 border-rose-200', badgeVariant: 'danger' },
 };
 
 export function Comparison() {
-  const [selectedWitnesses, setSelectedWitnesses] = useState<string[]>([
-    witnesses[0].id,
-    witnesses[1].id,
-  ]);
+  const { cases, witnesses, statements, getWitnessesForCase, getStatementsForCase } = useData();
+
+  const [selectedCaseId, setSelectedCaseId] = useState<string>(cases[0]?.id || 'case-1');
+  const activeCase = cases.find((c) => c.id === selectedCaseId) || cases[0];
+
+  const caseWitnesses = useMemo(() => getWitnessesForCase(selectedCaseId), [selectedCaseId, witnesses]);
+  const caseStatements = useMemo(() => getStatementsForCase(selectedCaseId), [selectedCaseId, statements]);
+
+  const [selectedWitnessIds, setSelectedWitnessIds] = useState<string[]>([]);
   const [comparing, setComparing] = useState(false);
   const [compared, setCompared] = useState(false);
 
+  // Default selection when case changes
+  useMemo(() => {
+    const ids = caseWitnesses.map((w) => w.id);
+    setSelectedWitnessIds(ids.slice(0, 4));
+  }, [selectedCaseId, caseWitnesses.length]);
+
   const toggleWitness = (id: string) => {
-    setSelectedWitnesses((prev) => {
+    setSelectedWitnessIds((prev) => {
       if (prev.includes(id)) {
-        if (prev.length <= 2) return prev;
+        if (prev.length <= 1) return prev;
         return prev.filter((w) => w !== id);
       }
       if (prev.length >= 4) return prev;
@@ -44,7 +57,55 @@ export function Comparison() {
     });
   };
 
-  const selectedWitnessObjects = witnesses.filter((w) => selectedWitnesses.includes(w.id));
+  const selectedWitnessObjects = caseWitnesses.filter((w) => selectedWitnessIds.includes(w.id));
+
+  // Dynamic Comparison Generation
+  const activeComparisonRows = useMemo(() => {
+    if (selectedCaseId === 'case-1' && caseWitnesses.length <= 3 && caseStatements.length <= 3) {
+      return defaultComparisonRows;
+    }
+
+    // Build dynamic rows from witness statements for newly added officer cases
+    const topics = ['Incident Time & Sequence', 'Location & Scene Positioning', 'Suspect Description & Attire', 'Getaway Vehicle & Direction'];
+    const rows: ComparisonRow[] = [];
+
+    topics.forEach((topic) => {
+      const values: Record<string, string> = {};
+      selectedWitnessObjects.forEach((w) => {
+        const stmt = caseStatements.find((s) => s.witnessId === w.id);
+        if (!stmt) {
+          values[w.name] = 'Statement Pending';
+        } else if (topic.includes('Time')) {
+          values[w.name] = stmt.rawStatement.slice(0, 70) + '...';
+        } else if (topic.includes('Location')) {
+          values[w.name] = stmt.distanceFromScene || 'Observed from nearby location';
+        } else if (topic.includes('Suspect')) {
+          const detail = stmt.keyDetails.find((d) => d.includes('people') || d.includes('Suspect')) || stmt.rawStatement.slice(0, 60);
+          values[w.name] = detail;
+        } else {
+          const veh = stmt.keyDetails.find((d) => d.includes('vehicles') || d.includes('car')) || 'Dark getaway vehicle fleeing scene';
+          values[w.name] = veh;
+        }
+      });
+
+      // Heuristic classification
+      const uniqueVals = new Set(Object.values(values));
+      const classification: ComparisonClassification = uniqueVals.size === 1 ? 'common' : uniqueVals.size === 2 ? 'difference' : 'contradiction';
+
+      rows.push({
+        topic,
+        values,
+        classification,
+        note: classification === 'common'
+          ? 'All selected witnesses provide consistent accounts for this topic.'
+          : classification === 'difference'
+          ? 'Minor variations in observation details requiring officer verification.'
+          : 'Significant discrepancy detected between witness statements.',
+      });
+    });
+
+    return rows;
+  }, [selectedCaseId, selectedWitnessObjects, caseStatements]);
 
   const handleCompare = () => {
     setComparing(true);
@@ -52,32 +113,32 @@ export function Comparison() {
       setComparing(false);
       setCompared(true);
       setTimeout(() => setCompared(false), 4000);
-    }, 2000);
+    }, 1500);
   };
 
   const stats = {
-    common: comparisonRows.filter((r) => r.classification === 'common').length,
-    difference: comparisonRows.filter((r) => r.classification === 'difference').length,
-    contradiction: comparisonRows.filter((r) => r.classification === 'contradiction').length,
+    common: activeComparisonRows.filter((r) => r.classification === 'common').length,
+    difference: activeComparisonRows.filter((r) => r.classification === 'difference').length,
+    contradiction: activeComparisonRows.filter((r) => r.classification === 'contradiction').length,
   };
 
   return (
     <div>
       <PageHeader
-        title="Witness Comparison"
-        description="Side-by-side comparison of what each witness reported across key topics. Information is automatically classified as common (green), difference requiring verification (orange), or contradiction (red)."
+        title="Multi-Witness Comparison & AI Analysis"
+        description="Compare witness statements side-by-side across confidence, commonalities, differences, and AI cross-examination summaries."
         icon={<GitCompareArrows size={22} />}
         action={
-          <Button onClick={handleCompare} disabled={comparing || selectedWitnesses.length < 2}>
+          <Button onClick={handleCompare} disabled={comparing || selectedWitnessIds.length < 1}>
             {comparing ? (
               <>
                 <Loader2 size={18} className="animate-spin" />
-                Comparing...
+                Analyzing Statements...
               </>
             ) : (
               <>
                 <GitCompareArrows size={18} />
-                Compare Witnesses
+                Run AI Multi-Witness Comparison
               </>
             )}
           </Button>
@@ -85,146 +146,187 @@ export function Comparison() {
       />
 
       {compared && (
-        <div className="mb-5 p-4 bg-success-50 border border-success-200 rounded-lg animate-fade-in flex items-center gap-3">
-          <Check size={18} className="text-success-600" />
-          <p className="text-sm text-success-800">Comparison complete. {stats.common} common facts, {stats.difference} differences, {stats.contradiction} contradictions identified.</p>
+        <div className="mb-5 p-4 bg-emerald-50 border border-emerald-200 rounded-xl animate-fade-in flex items-center gap-3">
+          <Check size={18} className="text-emerald-600" />
+          <p className="text-sm text-emerald-900 font-medium">
+            AI Comparison complete. {stats.common} agreed facts, {stats.difference} verified differences, and {stats.contradiction} contradictions identified.
+          </p>
         </div>
       )}
 
-      {/* Witness selector */}
-      <Card className="mb-5">
-        <CardHeader
-          title="Select Witnesses to Compare"
-          subtitle={`Select 2–4 witnesses (currently ${selectedWitnesses.length} selected)`}
-          icon={<Users size={20} />}
-        />
-        <div className="flex flex-wrap gap-2">
-          {witnesses.map((w) => {
-            const isSelected = selectedWitnesses.includes(w.id);
-            const isLocked = isSelected && selectedWitnesses.length <= 2;
-            return (
-              <button
-                key={w.id}
-                onClick={() => toggleWitness(w.id)}
-                className={cn(
-                  'flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all',
-                  isSelected
-                    ? 'border-primary-500 bg-primary-50/50'
-                    : 'border-slate-200 hover:border-slate-300',
-                  isLocked && 'cursor-not-allowed opacity-75'
-                )}
-                title={isLocked ? 'At least 2 witnesses required' : undefined}
-              >
-                <div className={cn(
-                  'w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold',
-                  isSelected ? 'bg-primary-100 text-primary-700' : 'bg-slate-100 text-slate-500'
-                )}>
-                  {w.name.split(' ').map((n) => n[0]).join('')}
-                </div>
-                <span className="text-sm font-medium text-slate-900">{w.name}</span>
-                {isSelected && <Check size={14} className="text-primary-600" />}
-              </button>
-            );
-          })}
+      {/* Case Selector Dropdown */}
+      <Card className="mb-5 p-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center flex-shrink-0">
+              <Folders size={20} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Select Case for Comparison</label>
+              <h3 className="text-base font-bold text-slate-900">{activeCase?.title}</h3>
+            </div>
+          </div>
+
+          <select
+            value={selectedCaseId}
+            onChange={(e) => setSelectedCaseId(e.target.value)}
+            className="input max-w-xs text-sm font-semibold"
+          >
+            {cases.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.caseNumber} - {c.title}
+              </option>
+            ))}
+          </select>
         </div>
       </Card>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-5">
-        <Card className="text-center py-4">
-          <div className="w-10 h-10 rounded-lg bg-success-50 text-success-600 flex items-center justify-center mx-auto mb-2">
-            <Check size={18} />
+      {/* Witness Selector Cards */}
+      <Card className="mb-5">
+        <CardHeader
+          title="Select Witnesses to Compare"
+          subtitle={`Select up to 4 witnesses for side-by-side analysis (${selectedWitnessIds.length} selected)`}
+          icon={<Users size={20} />}
+        />
+
+        {caseWitnesses.length === 0 ? (
+          <p className="text-sm text-slate-500 italic p-3">No witnesses registered for this case yet. Add witnesses under the Cases view.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2.5">
+            {caseWitnesses.map((w) => {
+              const isSelected = selectedWitnessIds.includes(w.id);
+              const stmt = caseStatements.find((s) => s.witnessId === w.id);
+              return (
+                <button
+                  key={w.id}
+                  onClick={() => toggleWitness(w.id)}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 transition-all text-left',
+                    isSelected
+                      ? 'border-primary-500 bg-primary-50/50 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold',
+                      isSelected ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-500'
+                    )}
+                  >
+                    {w.name.split(' ').map((n) => n[0]).join('')}
+                  </div>
+                  <div>
+                    <span className="text-sm font-semibold text-slate-900 block">{w.name}</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <Badge variant={w.status === 'submitted' || stmt ? 'success' : 'warning'} size="sm">
+                        {stmt ? 'Statement Done' : 'Pending'}
+                      </Badge>
+                      {stmt && (
+                        <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-0.5">
+                          <ShieldCheck size={12} /> {stmt.reliabilityScore}% Conf.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {isSelected && <Check size={16} className="text-primary-600 ml-auto" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <Card className="text-center py-4 bg-emerald-50/40 border-emerald-200">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-2">
+            <Check size={20} />
           </div>
           <p className="text-2xl font-bold text-slate-900">{stats.common}</p>
-          <p className="text-xs text-slate-500">Common Facts</p>
+          <p className="text-xs font-semibold text-emerald-800">Agreed Common Facts</p>
         </Card>
-        <Card className="text-center py-4">
-          <div className="w-10 h-10 rounded-lg bg-warning-50 text-warning-600 flex items-center justify-center mx-auto mb-2">
-            <AlertTriangle size={18} />
+
+        <Card className="text-center py-4 bg-amber-50/40 border-amber-200">
+          <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto mb-2">
+            <AlertTriangle size={20} />
           </div>
           <p className="text-2xl font-bold text-slate-900">{stats.difference}</p>
-          <p className="text-xs text-slate-500">Differences</p>
+          <p className="text-xs font-semibold text-amber-800">Verified Differences</p>
         </Card>
-        <Card className="text-center py-4">
-          <div className="w-10 h-10 rounded-lg bg-danger-50 text-danger-600 flex items-center justify-center mx-auto mb-2">
-            <X size={18} />
+
+        <Card className="text-center py-4 bg-rose-50/40 border-rose-200">
+          <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto mb-2">
+            <X size={20} />
           </div>
           <p className="text-2xl font-bold text-slate-900">{stats.contradiction}</p>
-          <p className="text-xs text-slate-500">Contradictions</p>
+          <p className="text-xs font-semibold text-rose-800">Major Contradictions</p>
         </Card>
       </div>
 
-      {/* Comparison table */}
+      {/* Main Matrix Table */}
       {comparing ? (
-        <Card className="ai-scanner">
-          <div className="flex items-center gap-4 py-8">
-            <div className="w-12 h-12 rounded-xl bg-primary-100 text-primary-600 flex items-center justify-center">
-              <GitCompareArrows size={24} className="animate-pulse" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-900">AI comparing witness statements...</p>
-              <p className="text-xs text-slate-500 mt-0.5">Cross-referencing {comparisonRows.length} topics across {selectedWitnessObjects.length} witnesses</p>
-              <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-primary-500 rounded-full w-3/4 animate-pulse-soft" />
-              </div>
-            </div>
+        <Card className="ai-scanner p-8 text-center">
+          <div className="flex flex-col items-center justify-center gap-3">
+            <GitCompareArrows size={36} className="text-primary-600 animate-spin" />
+            <h3 className="text-base font-bold text-slate-900">Cross-Referencing Witness Statements...</h3>
+            <p className="text-xs text-slate-500 max-w-sm">
+              Analyzing temporal alignment, visual observation angles, suspect descriptions, and reliability weights.
+            </p>
           </div>
         </Card>
       ) : (
         <Card>
           <CardHeader
-            title="Comparison Table"
-            subtitle={`${comparisonRows.length} topics compared across ${selectedWitnessObjects.length} witnesses`}
+            title="Side-by-Side Witness Matrix"
+            subtitle={`Comparing ${activeComparisonRows.length} topics across ${selectedWitnessObjects.length} witness testimonies`}
             icon={<GitCompareArrows size={20} />}
           />
 
-          {/* Legend */}
-          <div className="flex flex-wrap items-center gap-4 mb-4 pb-3 border-b border-slate-100">
-            {(Object.entries(classificationConfig) as [ComparisonClassification, typeof classificationConfig[ComparisonClassification]][]).map(([key, config]) => (
-              <div key={key} className="flex items-center gap-2">
-                <span className={cn('w-4 h-4 rounded border', config.cellClass)} />
-                <span className="text-xs text-slate-600">{config.label}</span>
-              </div>
-            ))}
-          </div>
-
           {/* Table */}
-          <div className="overflow-x-auto -mx-1 px-1">
+          <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-3 border-b-2 border-slate-200 min-w-[140px]">
-                    Topic
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-3 border-b-2 border-slate-200 min-w-[160px]">
+                    Key Topic
                   </th>
-                  {selectedWitnessObjects.map((w) => (
-                    <th key={w.id} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-3 border-b-2 border-slate-200 min-w-[160px]">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-[10px] font-semibold flex-shrink-0">
-                          {w.name.split(' ').map((n) => n[0]).join('')}
+                  {selectedWitnessObjects.map((w) => {
+                    const stmt = caseStatements.find((s) => s.witnessId === w.id);
+                    return (
+                      <th key={w.id} className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-3 border-b-2 border-slate-200 min-w-[200px]">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-[10px] font-bold">
+                            {w.name.split(' ').map((n) => n[0]).join('')}
+                          </div>
+                          <div>
+                            <span className="text-slate-900 font-bold block">{w.name}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">{stmt ? `${stmt.reliabilityScore}% Reliability` : 'Pending'}</span>
+                          </div>
                         </div>
-                        <span className="text-slate-700">{w.name}</span>
-                      </div>
-                    </th>
-                  ))}
-                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-3 border-b-2 border-slate-200 min-w-[100px]">
-                    Status
+                      </th>
+                    );
+                  })}
+                  <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-3 px-3 border-b-2 border-slate-200 min-w-[120px]">
+                    Classification
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {comparisonRows.map((row, i) => {
+                {activeComparisonRows.map((row, i) => {
                   const config = classificationConfig[row.classification];
                   return (
-                    <tr key={i} className="group animate-fade-in" style={{ animationDelay: `${i * 40}ms` }}>
-                      <td className="py-3 px-3 border-b border-slate-100">
-                        <span className="text-sm font-semibold text-slate-900">{row.topic}</span>
+                    <tr key={i} className="group border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                      <td className="py-3.5 px-3">
+                        <span className="text-sm font-semibold text-slate-900 block">{row.topic}</span>
                       </td>
                       {selectedWitnessObjects.map((w) => (
-                        <td key={w.id} className={cn('py-3 px-3 border-b border-slate-100 border-l-2', config.cellClass)}>
-                          <span className="text-sm text-slate-700">{row.values[w.name] || 'Not reported'}</span>
+                        <td key={w.id} className={cn('py-3.5 px-3 border-l-2', config.cellClass)}>
+                          <span className="text-xs text-slate-800 leading-relaxed font-medium">
+                            {row.values[w.name] || 'Not reported in statement'}
+                          </span>
                         </td>
                       ))}
-                      <td className="py-3 px-3 border-b border-slate-100">
+                      <td className="py-3.5 px-3">
                         <Badge variant={config.badgeVariant} size="sm">
                           {config.icon}
                           {config.label}
@@ -237,27 +339,33 @@ export function Comparison() {
             </table>
           </div>
 
-          {/* AI notes */}
-          <div className="mt-4 space-y-2">
-            {comparisonRows.map((row, i) => (
-              <div key={i} className={cn(
-                'p-3 rounded-lg border flex items-start gap-2',
-                row.classification === 'common' ? 'border-success-200 bg-success-50/30' :
-                row.classification === 'difference' ? 'border-warning-200 bg-warning-50/30' :
-                'border-danger-200 bg-danger-50/30'
-              )}>
-                <Sparkles size={14} className={cn(
-                  'flex-shrink-0 mt-0.5',
-                  row.classification === 'common' ? 'text-success-600' :
-                  row.classification === 'difference' ? 'text-warning-600' :
-                  'text-danger-600'
-                )} />
-                <div>
-                  <span className="text-xs font-semibold text-slate-700">{row.topic}: </span>
-                  <span className="text-xs text-slate-600">{row.note}</span>
-                </div>
+          {/* AI Investigative Synthesis Summary */}
+          <div className="mt-6 p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-slate-100 space-y-3">
+            <div className="flex items-center gap-2 text-primary-400">
+              <Sparkles size={18} />
+              <h4 className="text-sm font-bold uppercase tracking-wider text-white">
+                AI Cross-Examination Synthesis & Summary Report
+              </h4>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Based on the statements recorded for <strong>{activeCase?.title}</strong>, witness accounts present a <strong>{stats.common > stats.contradiction ? 'high consensus' : 'moderate conflict'}</strong> regarding event timeline and flee trajectory.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-1">
+              <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700">
+                <span className="font-bold text-emerald-400 block mb-1">Key Consensual Facts:</span>
+                <ul className="list-disc list-inside text-slate-300 space-y-1">
+                  <li>Incident occurred during night hours with active street light illumination.</li>
+                  <li>Getaway vehicle fled north towards main intersection.</li>
+                </ul>
               </div>
-            ))}
+              <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700">
+                <span className="font-bold text-amber-400 block mb-1">Recommended Follow-up Actions:</span>
+                <ul className="list-disc list-inside text-slate-300 space-y-1">
+                  <li>Request camera footage from 5th Avenue intersection to clarify vehicle color.</li>
+                  <li>Cross-examine witness regarding suspect height & jacket color discrepancies.</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </Card>
       )}

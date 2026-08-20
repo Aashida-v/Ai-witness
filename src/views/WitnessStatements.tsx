@@ -19,11 +19,12 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { ProgressBar, AIDisclaimer } from '@/components/ui/Alert';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { witnesses, statements } from '@/data/mockData';
+import { useData } from '@/context/DataContext';
 import { formatDateTime } from '@/lib/utils';
 import type { WitnessStatement } from '@/types';
 
 export function WitnessStatements() {
+  const { statements, witnesses } = useData();
   const [selected, setSelected] = useState<WitnessStatement | null>(null);
   const [search, setSearch] = useState('');
   const [filterWitness, setFilterWitness] = useState<string>('all');

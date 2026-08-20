@@ -17,12 +17,12 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { AIDisclaimer, Alert } from '@/components/ui/Alert';
-import { followUpQuestions, witnesses } from '@/data/mockData';
+import { useData } from '@/context/DataContext';
 import { formatDateTime } from '@/lib/utils';
 import type { FollowUpQuestion } from '@/types';
 
 export function FollowUpQuestions() {
-  const [questions, setQuestions] = useState<FollowUpQuestion[]>(followUpQuestions);
+  const { followUpQuestions: questions, witnesses, answerFollowUpQuestion } = useData();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
@@ -31,27 +31,21 @@ export function FollowUpQuestions() {
 
   const byWitness = witnesses.map((w) => ({
     witness: w,
-    questions: questions.filter((q) => q.witnessId === w.id),
+    questions: questions.filter((q) => q.witnessId === w.id || q.caseId === w.caseId),
   }));
 
   const handleAnswer = (qId: string) => {
     if (!answers[qId]?.trim()) return;
     setSubmitting(qId);
     setTimeout(() => {
-      setQuestions((prev) =>
-        prev.map((q) =>
-          q.id === qId ? { ...q, status: 'answered', answer: answers[qId] } : q
-        )
-      );
+      answerFollowUpQuestion(qId, answers[qId]);
       setSubmitting(null);
       setExpanded(null);
-    }, 1000);
+    }, 500);
   };
 
-  const handleSkip = (qId: string) => {
-    setQuestions((prev) =>
-      prev.map((q) => (q.id === qId ? { ...q, status: 'skipped' } : q))
-    );
+  const handleSkip = (_qId: string) => {
+    setExpanded(null);
   };
 
   const handleGenerate = () => {

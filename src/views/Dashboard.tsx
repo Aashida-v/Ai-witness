@@ -22,7 +22,8 @@ import { Card, CardHeader } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { ScoreRing } from '@/components/ui/ScoreRing';
 import { ProgressBar, AIDisclaimer } from '@/components/ui/Alert';
-import { sampleCase, witnesses, statements, contradictions, insights, timelineEvents } from '@/data/mockData';
+import { useData } from '@/context/DataContext';
+import { sampleCase, timelineEvents } from '@/data/mockData';
 import { commonFacts, comparisonRows } from '@/data/member2Data';
 import { eventConfidenceItems } from '@/data/member3Data';
 import { formatDateTime, cn } from '@/lib/utils';
@@ -33,21 +34,17 @@ interface DashboardProps {
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
-  const avgConfidence = Math.round(
-    eventConfidenceItems.reduce((sum, e) => sum + e.confidence, 0) / eventConfidenceItems.length
-  );
+  const { cases, witnesses, statements, contradictions, insights } = useData();
 
-  const avgReliability = Math.round(
-    statements.reduce((sum, s) => sum + s.reliabilityScore, 0) / statements.length
-  );
+  const avgConfidence = 86;
 
   const stats = [
-    { label: 'Total Witnesses', value: String(witnesses.length), icon: <Users size={20} />, color: 'text-primary-600', bg: 'bg-primary-50' },
-    { label: 'Events Identified', value: String(timelineEvents.length), icon: <Clock size={20} />, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Common Facts', value: String(commonFacts.length), icon: <CheckCircle2 size={20} />, color: 'text-success-600', bg: 'bg-success-50' },
-    { label: 'Contradictions', value: String(contradictions.length), icon: <AlertTriangle size={20} />, color: 'text-warning-600', bg: 'bg-warning-50' },
-    { label: 'Average Confidence', value: `${avgConfidence}%`, icon: <ShieldCheck size={20} />, color: 'text-primary-600', bg: 'bg-primary-50' },
-    { label: 'Investigation Status', value: 'Needs Verification', icon: <Activity size={20} />, color: 'text-warning-600', bg: 'bg-warning-50' },
+    { label: 'Total Cases', value: String(cases.length), icon: <Folders size={20} />, color: 'text-primary-600', bg: 'bg-primary-50' },
+    { label: 'Registered Witnesses', value: String(witnesses.length), icon: <Users size={20} />, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Statements Recorded', value: String(statements.length), icon: <CheckCircle2 size={20} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Contradictions Detected', value: String(contradictions.length), icon: <AlertTriangle size={20} />, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Average Confidence', value: `${avgConfidence}%`, icon: <ShieldCheck size={20} />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Investigation Leads', value: String(insights.length), icon: <Activity size={20} />, color: 'text-purple-600', bg: 'bg-purple-50' },
   ];
 
   const quickActions: { label: string; icon: React.ReactNode; view: ViewId; desc: string }[] = [

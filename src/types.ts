@@ -29,6 +29,9 @@ export interface Witness {
   contactInfo: string;
   interviewDate: string;
   interviewLocation: string;
+  qrToken?: string;
+  status?: 'pending' | 'submitted' | 'interviewed';
+  statementId?: string;
 }
 
 export interface StatementDetail {
@@ -168,7 +171,8 @@ export type ViewId =
   | 'future'
   | 'statement-collection'
   | 'ai-followup-analysis'
-  | 'witness-summary';
+  | 'witness-summary'
+  | 'witness-portal';
 
 // ===== Member 1: Witness Statement Collection =====
 
